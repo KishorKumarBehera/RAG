@@ -63,6 +63,9 @@ Then open the printed localhost URL.
    ```toml
    GROQ_API_KEY = "your-key-here"
    APP_PASSWORD = "something-only-you-share"
+   # Optional, while you are getting the password right: adds the configured
+   # password's length to the wrong-password message. Remove it afterwards.
+   # APP_PASSWORD_DEBUG = "1"
    ```
 
    Use a **second, separate Groq key** here so you can revoke the public copy

@@ -43,7 +43,7 @@ MIN_SCORE = 0.2
 # Bump this whenever app.py changes: a deployed copy can then be identified at a
 # glance, which is the difference between "my fix did not work" and "my fix is not
 # deployed yet".
-APP_REVISION = "2026-10-27-refusal-guard"
+APP_REVISION = "2026-10-27-quiet-length"
 # A public URL spends the owner's Groq credits, one call per question.
 MAX_QUESTIONS_PER_SESSION = 25
 
@@ -135,11 +135,17 @@ def require_password() -> None:
         if hmac.compare_digest(password.strip(), str(expected).strip()):
             st.session_state["authenticated"] = True
             return
-        st.error(
+
+        message = (
             "Wrong password. It is compared exactly, so check the APP_PASSWORD secret "
-            "for a stray space, a quote character, or a capital letter: "
-            f"the configured value is {len(str(expected).strip())} characters."
+            "for a stray space, a quote character, or a capital letter."
         )
+        if get_secret("APP_PASSWORD_DEBUG"):
+            # Off by default: reporting the length tells an unauthenticated visitor how
+            # long the password is. Set APP_PASSWORD_DEBUG to 1 while configuring the
+            # secret, then remove it.
+            message += f" The configured value is {len(str(expected).strip())} characters."
+        st.error(message)
 
     st.caption("This app is password protected.")
     st.stop()
