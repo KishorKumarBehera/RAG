@@ -74,10 +74,16 @@ def require_password() -> None:
         submitted = st.form_submit_button("Enter")
 
     if submitted:
-        if hmac.compare_digest(password, str(expected)):
+        # Strip both sides: a trailing space or newline inside the quotes of the
+        # TOML secret is invisible in the secrets editor but changes the value.
+        if hmac.compare_digest(password.strip(), str(expected).strip()):
             st.session_state["authenticated"] = True
             return
-        st.error("Wrong password.")
+        st.error(
+            "Wrong password. It is compared exactly, so check the APP_PASSWORD secret "
+            "for a stray space, a quote character, or a capital letter: "
+            f"the configured value is {len(str(expected).strip())} characters."
+        )
 
     st.caption("This app is password protected.")
     st.stop()
