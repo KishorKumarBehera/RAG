@@ -39,6 +39,10 @@ TOP_K = 4
 # Cosine floor. Below this the chunks are unrelated boilerplate, and letting the LLM
 # answer from them is how a RAG app starts inventing things.
 MIN_SCORE = 0.2
+# Bump this whenever app.py changes: a deployed copy can then be identified at a
+# glance, which is the difference between "my fix did not work" and "my fix is not
+# deployed yet".
+APP_REVISION = "2026-10-27-stdlib-fallback"
 # A public URL spends the owner's Groq credits, one call per question.
 MAX_QUESTIONS_PER_SESSION = 25
 
@@ -63,8 +67,16 @@ DIAGNOSTIC_MODULES = [
 def show_diagnostics(expanded: bool = False) -> None:
     """Report what is actually importable on this host, with versions."""
     with st.expander("Environment diagnostics (what is installed here)", expanded=expanded):
+        st.write(f"App revision: {APP_REVISION}")
         st.write(f"Python {sys.version.split()[0]} on {platform.system()} {platform.machine()}")
         st.write(f"Working directory: {os.getcwd()}")
+
+        try:
+            import langchain_groq  # noqa: F401
+
+            st.write("Groq client: langchain-groq")
+        except Exception:
+            st.write("Groq client: stdlib fallback (langchain-groq is NOT installed)")
 
         rows = []
         for name in DIAGNOSTIC_MODULES:

@@ -329,15 +329,95 @@ def load_env() -> None:
     load_dotenv()  # notebook/.env or any .env found from the working directory
 
 
+class _GroqResponse:
+    """Minimal stand-in for a LangChain AIMessage: just carries ``content``."""
+
+    def __init__(self, content: str):
+        self.content = content
+
+
+class StdlibGroqChat:
+    """Groq chat client with no third-party dependency.
+
+    A deployed environment does not always have ``langchain-groq`` installed, and
+    when it is missing the import fails at question time. The Groq API is a plain
+    HTTPS POST, so this keeps an app working without the package. It exposes the one
+    method the rest of the pipeline uses.
+    """
+
+    ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = DEFAULT_GROQ_MODEL,
+        temperature: float = 0.1,
+        max_tokens: int = 1024,
+        timeout: int = 60,
+    ):
+        self.api_key = api_key
+        self.model_name = model_name
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+
+    def invoke(self, prompt):
+        import json
+        import urllib.error
+        import urllib.request
+
+        content = prompt if isinstance(prompt, str) else str(prompt)
+        payload = json.dumps(
+            {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": content}],
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self.ENDPOINT,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                # Groq sits behind Cloudflare, which answers 403 with error code 1010
+                # when the default "Python-urllib/x.y" signature is presented.
+                "User-Agent": "rag-pdf-app/1.0",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            raise RuntimeError(f"Groq API error {e.code}: {detail}") from e
+
+        choice = body["choices"][0]
+        content = choice["message"].get("content") or ""
+        if not content.strip():
+            # gpt-oss models reason before answering, so a small max_tokens can be
+            # spent entirely on reasoning tokens and return empty text.
+            raise RuntimeError(
+                f"Groq returned no text (finish_reason={choice.get('finish_reason')!r}). "
+                f"{self.model_name} is a reasoning model: raise max_tokens."
+            )
+        return _GroqResponse(content)
+
+
 def build_llm(
     model_name: str = DEFAULT_GROQ_MODEL,
     temperature: float = 0.1,
     max_tokens: int = 1024,
     api_key: Optional[str] = None,
 ):
-    """Build the Groq chat client, failing loudly when the key is missing."""
-    from langchain_groq import ChatGroq
+    """Build a Groq chat client, failing loudly when the key is missing.
 
+    Uses ``langchain_groq`` when it is installed and falls back to the stdlib client
+    otherwise, so a missing package degrades instead of breaking the pipeline.
+    """
     load_env()  # repo-root .env, so this works straight from a script
     key = api_key or os.getenv("GROQ_API_KEY")
     if not key:
@@ -345,6 +425,15 @@ def build_llm(
             "GROQ_API_KEY is not set. Put it in the repo's .env file as\n"
             "  GROQ_API_KEY=your-key-here"
         )
+
+    try:
+        from langchain_groq import ChatGroq
+    except ImportError as e:
+        print(f"langchain_groq is not installed ({e}); using the stdlib Groq client")
+        return StdlibGroqChat(
+            key, model_name=model_name, temperature=temperature, max_tokens=max_tokens
+        )
+
     return ChatGroq(
         groq_api_key=key, model_name=model_name, temperature=temperature, max_tokens=max_tokens
     )
