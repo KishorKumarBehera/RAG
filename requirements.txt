@@ -1,10 +1,29 @@
+# Runtime dependencies. Streamlit Community Cloud installs this file automatically,
+# so this list is also the deployment list.
+#
+# NOTE: editing this file is what forces a fresh dependency install. A deployed app
+# once ran for several rebuilds against a stale environment that had never installed
+# langchain-groq, while the build log still reported "Processed dependencies" with no
+# error and no download time, i.e. it reused the cached environment. app.py now falls
+# back to a stdlib Groq client so that missing package cannot break the app, but if
+# the diagnostics panel reports MISSING for something listed here, touch this file and
+# reboot to force a clean install.
+#
+# CPU-only torch on purpose. PyPI's default torch wheel is the CUDA build: about
+# 4.6 GB larger, and it takes peak memory from ~633 MB to ~944 MB, which decides
+# whether the app fits a 1 GB free-tier host. Note the "+cpu" local version only
+# exists on PyTorch's own index, which is why the extra index is declared first.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+
 langchain
 langchain-core
 langchain-community
+langchain-groq
+langchain-text-splitters
+chromadb
+sentence-transformers
 pypdf
 pymupdf
-sentence-transformers
-faiss-cpu
-chromadb
-langchain-groq
 python-dotenv
+streamlit>=1.40

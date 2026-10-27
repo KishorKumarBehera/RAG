@@ -9,6 +9,7 @@ Run:  uv run pytest      (or)  .venv/bin/python -m pytest
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -181,6 +182,103 @@ def test_reingesting_a_modified_pdf_does_not_grow_the_collection(embedder, tmp_p
     assert vs.count() == 4, "editing a document must overwrite its chunks, not append"
     stored = vs.collection.get(include=["documents"])["documents"]
     assert all(text.startswith("edited") for text in stored), stored
+
+
+def test_answer_question_tells_the_model_to_refuse_without_the_answer(embedder, store):
+    """A question the documents do not answer must produce a refusal, not the model's
+    own general knowledge. The prompt has to say so explicitly."""
+    from rag.retrieval import NOT_IN_DOCUMENTS_MESSAGE
+
+    llm = StubLLM()
+    answer_question("Is Java faster than Python?", RAGRetriever(store, embedder), llm)
+
+    prompt = llm.prompts[0]
+    assert "ONLY the context" in prompt
+    assert NOT_IN_DOCUMENTS_MESSAGE in prompt
+
+
+def test_answer_question_passes_a_refusal_through(embedder, store):
+    """When the model refuses, the caller gets the refusal verbatim so the UI can say
+    the documents do not cover it instead of presenting it as an answer."""
+    from rag.retrieval import NOT_IN_DOCUMENTS_MESSAGE
+
+    llm = StubLLM(reply=NOT_IN_DOCUMENTS_MESSAGE)
+    answer = answer_question("Is Java faster than Python?", RAGRetriever(store, embedder), llm)
+
+    assert answer.strip().startswith(NOT_IN_DOCUMENTS_MESSAGE)
+
+
+def test_build_llm_falls_back_when_langchain_groq_is_absent(monkeypatch):
+    """A deployed container without langchain-groq must not break the pipeline: the
+    import used to fail at question time with a redacted ModuleNotFoundError."""
+    from rag.retrieval import StdlibGroqChat, build_llm
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "langchain_groq", None)  # makes the import raise
+
+    llm = build_llm()
+    assert isinstance(llm, StdlibGroqChat)
+
+
+def test_stdlib_groq_client_sends_a_user_agent(monkeypatch):
+    """Groq is behind Cloudflare, which answers HTTP 403 / error 1010 for the default
+    'Python-urllib/x.y' signature."""
+    import json as _json
+
+    from rag.retrieval import StdlibGroqChat
+
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return _json.dumps({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}).encode()
+
+    def fake_urlopen(request, timeout=None):
+        captured["headers"] = {k.lower(): v for k, v in request.header_items()}
+        captured["body"] = _json.loads(request.data.decode())
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    llm = StdlibGroqChat("test-key", model_name="openai/gpt-oss-20b")
+    response = llm.invoke("hello")
+
+    assert response.content == "ok"
+    assert "user-agent" in captured["headers"], captured["headers"]
+    assert captured["headers"]["authorization"].startswith("Bearer ")
+    assert captured["body"]["model"] == "openai/gpt-oss-20b"
+
+
+def test_stdlib_groq_client_reports_empty_reasoning_only_replies(monkeypatch):
+    """gpt-oss reasons before answering, so a small max_tokens returns empty content
+    with finish_reason 'length' instead of an answer."""
+    import json as _json
+
+    from rag.retrieval import StdlibGroqChat
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return _json.dumps(
+                {"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}
+            ).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout=None: FakeResponse())
+
+    llm = StdlibGroqChat("test-key")
+    with pytest.raises(RuntimeError, match="no text"):
+        llm.invoke("hello")
 
 
 def test_collection_starts_empty_and_reset_clears_it(embedder, tmp_path):
