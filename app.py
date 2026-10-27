@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from rag.retrieval import (  # noqa: E402
+    NOT_IN_DOCUMENTS_MESSAGE,
     EmbeddingManager,
     RAGRetriever,
     VectorStore,
@@ -42,7 +43,7 @@ MIN_SCORE = 0.2
 # Bump this whenever app.py changes: a deployed copy can then be identified at a
 # glance, which is the difference between "my fix did not work" and "my fix is not
 # deployed yet".
-APP_REVISION = "2026-10-27-stdlib-fallback"
+APP_REVISION = "2026-10-27-refusal-guard"
 # A public URL spends the owner's Groq credits, one call per question.
 MAX_QUESTIONS_PER_SESSION = 25
 
@@ -231,10 +232,18 @@ def main() -> None:
                 "No relevant context found in these PDFs for that question, so no answer "
                 "was generated. Try rephrasing using words that appear in the documents."
             )
+        elif answer.strip().startswith(NOT_IN_DOCUMENTS_MESSAGE):
+            # The model was told to refuse rather than answer from its own knowledge,
+            # and it did. Show the closest passages anyway so the reader can judge.
+            st.warning(
+                "The PDFs do not cover that question. The closest passages are below, but "
+                "they do not answer it, so no answer was invented."
+            )
         else:
             st.markdown("### Answer")
             st.write(answer)
 
+        if hits:
             st.markdown("### Sources")
             for hit in hits:
                 meta = hit["metadata"]

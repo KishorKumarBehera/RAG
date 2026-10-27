@@ -42,6 +42,9 @@ DEFAULT_PERSIST_DIRECTORY = "data/vector_store"
 # gemma2-9b-it was decommissioned by Groq; this one is live.
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
 NO_CONTEXT_MESSAGE = "No relevant context found to answer the question."
+# Returned by the model when the retrieved context does not answer the question.
+# Kept as a constant because the app checks for it before showing an answer.
+NOT_IN_DOCUMENTS_MESSAGE = "The documents do not cover that."
 
 
 # ---------------------------------------------------------------- ingestion
@@ -452,14 +455,17 @@ def answer_question(
     if not context:
         return NO_CONTEXT_MESSAGE
 
-    prompt = f"""Use the following context to answer the question concisely.
+    prompt = f"""Answer the question using ONLY the context below. Do not use any other
+knowledge. If the context does not contain the answer, reply with exactly this and
+nothing else:
+{NOT_IN_DOCUMENTS_MESSAGE}
 
         Context:
         {context}
 
         Question: {query}
 
-        Answer: """
+        Answer:"""
     response = llm.invoke(prompt)
     return response.content
 
@@ -490,7 +496,8 @@ def rag_advanced(
     confidence = max(doc["similarity_score"] for doc in results)
 
     prompt = (
-        "Use the following context to answer the question concisely.\n"
+        "Answer the question using ONLY the context below. Do not use any other knowledge. "
+        f"If the context does not contain the answer, reply with exactly: {NOT_IN_DOCUMENTS_MESSAGE}\n"
         f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:"
     )
     response = llm.invoke(prompt)

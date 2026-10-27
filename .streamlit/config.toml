@@ -1,0 +1,16 @@
+[server]
+# A deployed container has no use for the file watcher: the platform rebuilds and
+# reboots the app when the branch changes. Worse, the watcher scans every imported
+# module for its source path (see get_module_paths in Streamlit's
+# local_sources_watcher), and touching transformers' lazy submodules makes it import
+# an optional backend. That logs a warning whose traceback ends in
+# "ModuleNotFoundError: No module named 'torchvision'", which looks like a broken
+# deployment but is only the watcher. Turning the watcher off removes the noise
+# without installing torchvision, which this app does not use.
+#
+# For local development you still want reloads; override per session with:
+#   streamlit run app.py --server.fileWatcherType auto
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false

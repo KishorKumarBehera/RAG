@@ -184,6 +184,30 @@ def test_reingesting_a_modified_pdf_does_not_grow_the_collection(embedder, tmp_p
     assert all(text.startswith("edited") for text in stored), stored
 
 
+def test_answer_question_tells_the_model_to_refuse_without_the_answer(embedder, store):
+    """A question the documents do not answer must produce a refusal, not the model's
+    own general knowledge. The prompt has to say so explicitly."""
+    from rag.retrieval import NOT_IN_DOCUMENTS_MESSAGE
+
+    llm = StubLLM()
+    answer_question("Is Java faster than Python?", RAGRetriever(store, embedder), llm)
+
+    prompt = llm.prompts[0]
+    assert "ONLY the context" in prompt
+    assert NOT_IN_DOCUMENTS_MESSAGE in prompt
+
+
+def test_answer_question_passes_a_refusal_through(embedder, store):
+    """When the model refuses, the caller gets the refusal verbatim so the UI can say
+    the documents do not cover it instead of presenting it as an answer."""
+    from rag.retrieval import NOT_IN_DOCUMENTS_MESSAGE
+
+    llm = StubLLM(reply=NOT_IN_DOCUMENTS_MESSAGE)
+    answer = answer_question("Is Java faster than Python?", RAGRetriever(store, embedder), llm)
+
+    assert answer.strip().startswith(NOT_IN_DOCUMENTS_MESSAGE)
+
+
 def test_build_llm_falls_back_when_langchain_groq_is_absent(monkeypatch):
     """A deployed container without langchain-groq must not break the pipeline: the
     import used to fail at question time with a redacted ModuleNotFoundError."""
