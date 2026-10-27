@@ -10,7 +10,9 @@ needs no database, no volume and no persistence between restarts.
 from __future__ import annotations
 
 import hmac
+import importlib
 import os
+import platform
 import sys
 import tempfile
 from pathlib import Path
@@ -39,6 +41,47 @@ TOP_K = 4
 MIN_SCORE = 0.2
 # A public URL spends the owner's Groq credits, one call per question.
 MAX_QUESTIONS_PER_SESSION = 25
+
+# Shown in the diagnostics panel. A deployed container says "ModuleNotFoundError ...
+# redacted" when something is missing, which tells you nothing; this names it.
+DIAGNOSTIC_MODULES = [
+    "streamlit",
+    "numpy",
+    "torch",
+    "sentence_transformers",
+    "chromadb",
+    "langchain",
+    "langchain_core",
+    "langchain_community",
+    "langchain_groq",
+    "groq",
+    "pypdf",
+    "dotenv",
+]
+
+
+def show_diagnostics(expanded: bool = False) -> None:
+    """Report what is actually importable on this host, with versions."""
+    with st.expander("Environment diagnostics (what is installed here)", expanded=expanded):
+        st.write(f"Python {sys.version.split()[0]} on {platform.system()} {platform.machine()}")
+        st.write(f"Working directory: {os.getcwd()}")
+
+        rows = []
+        for name in DIAGNOSTIC_MODULES:
+            try:
+                module = importlib.import_module(name)
+                version = getattr(module, "__version__", None) or "installed"
+                rows.append({"module": name, "status": "ok", "version": str(version)})
+            except Exception as exc:
+                rows.append({"module": name, "status": f"MISSING ({type(exc).__name__})", "version": str(exc)[:80]})
+        st.table(rows)
+
+        try:
+            import torch
+
+            st.write(f"torch build: {torch.__version__}  (a '+cpu' suffix means the CPU wheel was installed)")
+        except Exception:
+            pass
 
 
 def get_secret(name: str, default: str | None = None) -> str | None:
@@ -154,11 +197,22 @@ def main() -> None:
 
         st.session_state["asked"] = asked + 1
         retriever = RAGRetriever(store, embedder)
-        llm = build_llm(api_key=get_secret("GROQ_API_KEY"))
 
-        with st.spinner("Searching the PDFs..."):
-            hits = retriever.retrieve(question, top_k=TOP_K, score_threshold=MIN_SCORE)
-            answer = answer_question(question, retriever, llm, top_k=TOP_K, min_score=MIN_SCORE)
+        try:
+            llm = build_llm(api_key=get_secret("GROQ_API_KEY"))
+            with st.spinner("Searching the PDFs..."):
+                hits = retriever.retrieve(question, top_k=TOP_K, score_threshold=MIN_SCORE)
+                answer = answer_question(question, retriever, llm, top_k=TOP_K, min_score=MIN_SCORE)
+        except Exception as exc:
+            # Streamlit redacts deployed tracebacks, so name the failure in the UI.
+            st.error(f"Could not answer: {type(exc).__name__}: {exc}")
+            st.info(
+                "A module is probably missing from the deployed environment. Open the "
+                "diagnostics panel below; fix it by installing the package or by making "
+                "sure requirements.txt lists it, then reboot the app."
+            )
+            show_diagnostics(expanded=True)
+            st.stop()
 
         if not hits:
             st.warning(
@@ -183,6 +237,7 @@ def main() -> None:
         f"Questions this session: {st.session_state.get('asked', 0)}/{MAX_QUESTIONS_PER_SESSION}. "
         f"Embedding model: {MODEL_NAME}. Retrieved context only; no external knowledge."
     )
+    show_diagnostics()
 
 
 if __name__ == "__main__":

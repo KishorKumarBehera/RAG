@@ -1,10 +1,21 @@
+# Runtime dependencies. Streamlit Community Cloud installs this file automatically,
+# so this list is also the deployment list.
+#
+# CPU-only torch on purpose. PyPI's default torch wheel is the CUDA build: about
+# 4.6 GB larger, and it takes peak memory from ~633 MB to ~944 MB, which decides
+# whether the app fits a 1 GB free-tier host. Note the "+cpu" local version only
+# exists on PyTorch's own index, which is why the extra index is declared first.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+
 langchain
 langchain-core
 langchain-community
+langchain-groq
+langchain-text-splitters
+chromadb
+sentence-transformers
 pypdf
 pymupdf
-sentence-transformers
-faiss-cpu
-chromadb
-langchain-groq
 python-dotenv
+streamlit>=1.40

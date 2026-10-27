@@ -58,11 +58,7 @@ Then open the printed localhost URL.
 1. Push this repo to GitHub (already done for the upstream repo).
 2. Go to <https://share.streamlit.io>, sign in with GitHub, click **New app**.
 3. Pick the repository and branch, and set **Main file path** to `app.py`.
-4. Under **Advanced settings**, set **Requirements file** to `requirements-app.txt`.
-   That file pins CPU-only torch; the default PyPI torch wheel is the CUDA build,
-   which is ~4.6 GB larger and takes peak memory from ~633 MB to ~944 MB. The app
-   runs on CPU, so the CUDA build only costs install and cold-start time.
-5. In the same panel, add the secrets (this is the deployed equivalent of `.env`):
+4. In the same panel, add the secrets (this is the deployed equivalent of `.env`):
 
    ```toml
    GROQ_API_KEY = "your-key-here"
@@ -74,8 +70,19 @@ Then open the printed localhost URL.
    password, which is worth doing on a public URL because every question spends
    tokens on that key. If you leave `APP_PASSWORD` out, the app stays open but shows
    a warning banner saying so.
-6. Deploy. First boot takes a minute or two: it downloads the embedding model and
+5. Deploy. First boot takes a minute or two: it downloads the embedding model and
    builds the index from the two PDFs.
+
+There is no requirements-file field to set: Streamlit Community Cloud installs
+`requirements.txt` from the repo root automatically, and that file already pins the
+CPU-only torch wheel.
+
+### If a deployed app reports a missing module
+
+The traceback Streamlit shows on a deployed app is redacted. Open the
+**Environment diagnostics** panel at the bottom of the app: it lists every module the
+app needs, whether it imported, and its version, so a missing package names itself.
+Also check that `requirements.txt` lists it, then reboot the app from **Manage app**.
 
 Things worth knowing about the free tier:
 
