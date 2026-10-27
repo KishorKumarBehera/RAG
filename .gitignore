@@ -8,6 +8,15 @@ wheels/
 
 # Virtual environments
 .venv
-notebook/.env
-notebook/.env
+
+# Secrets. The root .env is where GROQ_API_KEY lives, so it must be ignored
+# at every level, not just notebook/.
+.env
+*.env
+**/.env
+
+# Generated vector store
 data/vector_store/
+
+# Test cache
+.pytest_cache/
